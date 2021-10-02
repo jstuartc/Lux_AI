@@ -28,6 +28,7 @@ def agent(observation, configuration):
         game_state._initialize(observation["updates"])
         game_state._update(observation["updates"][2:])
         game_state.id = observation.player
+        """Create some hives"""
     else:
         game_state._update(observation["updates"])
     
@@ -73,5 +74,16 @@ def agent(observation, configuration):
 
     # you can add debug annotations using the functions in the annotate object
     # actions.append(annotate.circle(0, 0))
+
+
+    """
+    What needs to be done every turn
+    Check Hives update workers and cities and list missions
+    Update mission
+    Assign missions to hive workers
+    Assign missions to non hive assigned workers along with hives
     
+    """
+
+
     return actions
