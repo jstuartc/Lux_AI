@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 from lux.game import Game
 from lux.game_map import GameMap, Cell, Position, RESOURCE_TYPES
@@ -32,7 +33,7 @@ class Hive:
         self._add_city_locations()
         self.empty_city_locations = self.city_locations.copy()
         self.missions = []
-        if self.resource_type == "wood":
+        if self.resource_type == RESOURCE_TYPES.WOOD:
             self.active = True
         else:
             self.active = False
@@ -73,9 +74,9 @@ class Hive:
     def _check_hive_active(self, game_state: Game, player: Player):
         # Checks if research is good enough
         if not self.active:
-            if player.researched_coal() and self.resource_type == "coal":
+            if player.researched_coal() and self.resource_type == RESOURCE_TYPES.COAL:
                 self.active = True
-            elif player.researched_uranium() and self.resource_type == "uranium":
+            elif player.researched_uranium() and self.resource_type == RESOURCE_TYPES.URANIUM:
                 self.active = True
         # Checks if there is still fuel
         resource_total = 0
@@ -85,6 +86,17 @@ class Hive:
                 resource_total += game_state.map.get_cell_by_pos(pos).resource.amount
         if resource_total == 0:
             self.active = False
+
+    def _update_hive_area(self):
+        """Aim is to update the hive. Removing tiles if they don't have resources and then updating city locations"""
+        new_tiles: List[Position] = []  # Updates hive resource area
+        for tile_pos in self.resource_tiles:
+            if self.game.map.get_cell_by_pos(tile_pos).has_resource():
+                new_tiles.append(tile_pos)
+        self.resource_tiles = new_tiles
+
+        self.city_locations: List[Position] = []  # locations may change depending on what resources are left so update
+        self._add_city_locations()
 
     def remove(self, worker_id):
         self.workers.remove(worker_id)
@@ -100,24 +112,33 @@ class Hive:
 
         return closest_loc
 
-    def update(self, player: Player, game_state: Game, unit_dict: Dict[str, Unit], step:int):
+    def rank_builder(self, builder: Unit, target_pos: Position):
+        # Average way of ranking a builder suitability
+        score = 0
+        if builder.can_build(self.game.map) and builder.pos == target_pos:
+            score = 1000
+            score += target_pos.x  # To differentiate
+            score += target_pos.y * 3
+            return score
+        if builder.can_build(self.game.map):
+            score += 1
+        distance = target_pos.distance_to(builder.pos)
+        score -= math.exp((distance - 1))
+        return score
+
+    def update(self, player: Player, game_state: Game, unit_dict: Dict[str, Unit], step: int):
         """
-        check if hive is active
-        updates city list and
-        worker list
-
-        FILL THIS OUT
-
-        DO SOMETHING ABOUT NIGHTTIME
+        Need proper description here
         """
         self.game = game_state
 
-        if step%40 ==0:
+        if step % 40 == 0:  # Hard reset
             self.missions = []
 
         self._check_hive_active(game_state, player)
         if not self.active:
             self.workers = []
+            self.missions = []
             return
 
         alive_units = [
@@ -135,6 +156,11 @@ class Hive:
                 if mission.check_mission_complete(game_state, unit_position) is False:
                     missions_remaining.append(mission)
         self.missions = missions_remaining
+
+        self.optimise_worker_missions(unit_dict)
+
+        """
+        
         assigned_workers = [mission.unit_id for mission in missions_remaining]
 
         unassigned_workers = [unit for unit in self.workers if unit not in assigned_workers]
@@ -147,8 +173,6 @@ class Hive:
 
         guard_tiles_unassigned = [pos for pos in self.resource_tiles if pos not in guard_tiles_assigned]
 
-        """THIS IS A BORING WAY OF ASSIGNING WORKERS. CAN DO A LOT BETTER"""
-
         for worker in unassigned_workers:
             if len(cities_unassigned) > 0:
                 new_mission = Mission("Build", cities_unassigned.pop(0), worker)
@@ -160,12 +184,6 @@ class Hive:
                 self.remove(worker)  # Hive doesnt need the worker
 
         """
-            Previous missions from last time
-            Check that none are completed or unassigned
-            Look at cities which need to be built and add them to mission list
-            Collate empty workers
-            Assign missions to empty workers
-            """
 
     def hive_score(self, worker_position, is_night: bool):
         """Returns a score rating how much the hive should have a unit"""
@@ -179,9 +197,57 @@ class Hive:
         if is_night:  # penalise more if at night, as don't want to risk travelling
             hive_score -= math.exp(distance_to_target)  # Further away the more unlikely
         else:
-            hive_score -= math.exp(distance_to_target/10)
-        if self.resource_type == "coal":
+            hive_score -= math.exp(distance_to_target / 10)
+        if self.resource_type == RESOURCE_TYPES.COAL:
             hive_score *= 10
-        elif self.resource_type == "uranium":
+        elif self.resource_type == RESOURCE_TYPES.URANIUM:
             hive_score *= 100
         return hive_score
+
+    def optimise_worker_missions(self, unit_dict: Dict[str, Unit]):
+
+        city_locations_to_use = self.empty_city_locations
+        new_mission_list = []
+        travel_units: List[Unit] = []
+        for mission in self.missions:
+            if mission.mission_type == "Travel":
+                travel_units.append(mission.unit_id)
+                new_mission_list.append(mission)
+        units_to_use: List[Unit] = [unit_dict[worker_id] for worker_id in self.workers if worker_id not in travel_units]
+
+        x_length, y_length = len(units_to_use), len(city_locations_to_use)
+        if x_length > y_length:
+            short_side = y_length
+            need_guards = True
+        else:
+            short_side = x_length
+            need_guards = False
+
+        # Build the graph
+        graph = np.zeros([x_length, y_length])
+        for x in range(x_length):
+            for y in range(y_length):
+                graph[x, y] = self.rank_builder(units_to_use[x], city_locations_to_use[y])
+
+        # Find the index of the highest scorers, create mission remove until graph destroyed
+        for a in range(short_side):
+            indices = np.where(graph == np.amax(graph))
+            city_loc = city_locations_to_use[indices[1][0]]
+            unit = units_to_use[indices[0][0]]
+            new_mission = Mission("Build", city_loc, unit.id)
+            new_mission_list.append(new_mission)
+            graph = np.delete(graph, indices[0][0], 0)  # Delete row
+            graph = np.delete(graph, indices[1][0], 1)  # Delete column
+            units_to_use.remove(unit)
+            city_locations_to_use.remove(city_loc)
+
+        if need_guards:
+            guard_tiles_unassigned = [pos for pos in self.resource_tiles]
+            for worker in units_to_use:
+                if len(guard_tiles_unassigned) > 0:
+                    new_mission = Mission("Guard", guard_tiles_unassigned.pop(0), worker.id)
+                    new_mission_list.append(new_mission)
+                else:
+                    self.remove(worker.id)
+
+        self.missions = new_mission_list
