@@ -99,7 +99,7 @@ def agent(observation, configuration):
         hive_to_join = ranked_hives_for_workers[-1]
 
         hive_to_join.workers.append(worker_id)
-        new_mission = Mission("Travel", hive_to_join.find_travel_location(worker_pos)[0], worker_id)
+        new_mission = Mission("Travel", (hive_to_join.find_travel_location(worker_pos))[0], worker_id)
         hive_to_join.missions.append(new_mission)
 
     # Now need to make the units do their actions
@@ -141,7 +141,7 @@ def agent(observation, configuration):
                 actions.append(results[0])
 
     # Make the cities do their actions
-    city_actions = CityOperator.city_action(game_state, player)
+    city_actions = CityOperator.city_action(game_state, player, hives)
     actions.extend(city_actions)
     # you can add debug annotations using the functions in the annotate object
     # actions.append(annotate.circle(0, 0))

@@ -131,6 +131,7 @@ class Hive:
         Need proper description here
         """
         self.game = game_state
+        self._update_hive_area()
 
         if step % 40 == 0:  # Hard reset
             self.missions = []
@@ -192,20 +193,31 @@ class Hive:
         hive_score = 0
         hive_score += len(self.city_locations) * 1  # Multiplier for type
         hive_score -= len(self.workers) * 2
+
+        #  Avoid the corners
+        centre_pos = Position(self.game.map_width,self.game.map_height)
+        distance_from_centre = self.find_travel_location(centre_pos)[1]
+        hive_score -= distance_from_centre/4
+
         hive_score *= 4  # To account for the fact that the number of workers is much more important
-        distance_to_target = self.find_travel_location(worker_position)[0].distance_to(worker_position)
+        distance_to_target = self.find_travel_location(worker_position)[1]
         if is_night:  # penalise more if at night, as don't want to risk travelling
-            hive_score -= math.exp(distance_to_target)  # Further away the more unlikely
+            hive_score -= math.exp(distance_to_target*2)  # Further away the more unlikely
         else:
             hive_score -= math.exp(distance_to_target / 2)
+
+        #  To prioritise coal and uranium
         if self.resource_type == RESOURCE_TYPES.COAL:
             hive_score *= 10
         elif self.resource_type == RESOURCE_TYPES.URANIUM:
             hive_score *= 100
+        #  Don't want to oversubscribe a hive
+        if len(self.workers) >= len(self.city_locations):
+            hive_score -= 10000
         return hive_score
 
     def optimise_worker_missions(self, unit_dict: Dict[str, Unit]):
-
+        worker_num_assigned = 0
         city_locations_to_use = self.empty_city_locations
         new_mission_list = []
         travel_units: List[Unit] = []
@@ -213,6 +225,7 @@ class Hive:
             if mission.mission_type == "Travel":
                 travel_units.append(mission.unit_id)
                 new_mission_list.append(mission)
+                worker_num_assigned += 1
         units_to_use: List[Unit] = [unit_dict[worker_id] for worker_id in self.workers if worker_id not in travel_units]
 
         x_length, y_length = len(units_to_use), len(city_locations_to_use)
@@ -240,13 +253,15 @@ class Hive:
             graph = np.delete(graph, indices[1][0], 1)  # Delete column
             units_to_use.remove(unit)
             city_locations_to_use.remove(city_loc)
+            worker_num_assigned += 1
 
         if need_guards:
             guard_tiles_unassigned = [pos for pos in self.resource_tiles]
             for worker in units_to_use:
-                if len(guard_tiles_unassigned) > 0:
+                if len(guard_tiles_unassigned) > 0 and worker_num_assigned >= len(self.resource_tiles)+1:
                     new_mission = Mission("Guard", guard_tiles_unassigned.pop(0), worker.id)
                     new_mission_list.append(new_mission)
+                    worker_num_assigned += 1
                 else:
                     self.remove(worker.id)
 
