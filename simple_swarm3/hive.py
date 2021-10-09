@@ -74,9 +74,9 @@ class Hive:
     def _check_hive_active(self, game_state: Game, player: Player):
         # Checks if research is good enough
         if not self.active:
-            if player.researched_coal() and self.resource_type == RESOURCE_TYPES.COAL:
+            if player.research_points > 42 and self.resource_type == RESOURCE_TYPES.COAL:
                 self.active = True
-            elif player.researched_uranium() and self.resource_type == RESOURCE_TYPES.URANIUM:
+            elif player.research_points > 175 and self.resource_type == RESOURCE_TYPES.URANIUM:
                 self.active = True
         # Checks if there is still fuel
         resource_total = 0
@@ -101,11 +101,16 @@ class Hive:
     def remove(self, worker_id):
         self.workers.remove(worker_id)
 
+    def remove_mission(self, worker_id):
+        for mission in self.missions:
+            if mission.unit_id == worker_id:
+                self.missions.remove(mission)
+
     def find_travel_location(self, current_pos: Position):
         """Finds the nearest location for a potential worker to travel to"""
         # this position is the nearest city location
         closest_distance, closest_loc = math.inf, Position(0, 0)
-        for city_loc in self.city_locations:
+        for city_loc in self.empty_city_locations:  # Use city locations
             distance = current_pos.distance_to(city_loc)
             if distance < closest_distance:
                 closest_distance, closest_loc = distance, city_loc
@@ -126,7 +131,7 @@ class Hive:
         score -= math.exp((distance - 1))
         return score
 
-    def update(self, player: Player, game_state: Game, unit_dict: Dict[str, Unit], step: int):
+    def update(self, player: Player, game_state: Game, unit_dict: Dict[str, Unit], step: int, is_night):
         """
         Need proper description here
         """
@@ -158,7 +163,7 @@ class Hive:
                     missions_remaining.append(mission)
         self.missions = missions_remaining
 
-        self.optimise_worker_missions(unit_dict)
+        self.optimise_worker_missions(unit_dict, is_night)
 
         """
         
@@ -186,7 +191,7 @@ class Hive:
 
         """
 
-    def hive_score(self, worker_position, is_night: bool):
+    def hive_score(self, worker_position):
         """Returns a score rating how much the hive should have a unit"""
         """Work on this it is real garbage"""
         if not self.active:
@@ -202,22 +207,21 @@ class Hive:
 
         hive_score *= 4  # To account for the fact that the number of workers is much more important
         distance_to_target = self.find_travel_location(worker_position)[1]
-        if is_night:  # penalise more if at night, as don't want to risk travelling
-            hive_score -= math.exp(distance_to_target * 2)  # Further away the more unlikely
-        else:
-            hive_score -= math.exp(distance_to_target / 2)
 
+        hive_score -= math.exp(distance_to_target / 2)
+
+        #  Don't want to oversubscribe a hive
+        if len(self.workers) >= len(self.city_locations)+1:
+            hive_score -= 10000
         #  To prioritise coal and uranium
         if self.resource_type == RESOURCE_TYPES.COAL:
-            hive_score += 10
+            hive_score *= 10
         elif self.resource_type == RESOURCE_TYPES.URANIUM:
             hive_score *= 100
-        #  Don't want to oversubscribe a hive
-        if len(self.workers) >= len(self.city_locations):
-            hive_score -= 10000
+
         return hive_score
 
-    def optimise_worker_missions(self, unit_dict: Dict[str, Unit]):
+    def optimise_worker_missions(self, unit_dict: Dict[str, Unit], is_night):
         worker_num_assigned = 0
         city_locations_to_use = self.empty_city_locations
         new_mission_list = []
@@ -259,11 +263,15 @@ class Hive:
         if need_guards:
             guard_tiles_unassigned = [pos for pos in self.resource_tiles]
             for worker in units_to_use:
-                if len(guard_tiles_unassigned) > 0 and worker_num_assigned >= len(self.resource_tiles) + 1:
-                    new_mission = Mission("Guard", guard_tiles_unassigned.pop(0), worker.id)
-                    new_mission_list.append(new_mission)
-                    worker_num_assigned += 1
+                if len(guard_tiles_unassigned) > 0:
+                    if is_night or worker_num_assigned <= len(self.resource_tiles) + 1:
+                        new_mission = Mission("Guard", guard_tiles_unassigned.pop(0), worker.id)
+                        new_mission_list.append(new_mission)
+                        worker_num_assigned += 1
                 else:
                     self.remove(worker.id)
+        if not is_night and worker_num_assigned > len(self.resource_tiles) + 1:
+            for unit in travel_units:
+                self.remove(worker.id)
 
         self.missions = new_mission_list

@@ -72,6 +72,6 @@ def agent(observation, configuration):
                         actions.append(unit.move(move_dir))
 
     # you can add debug annotations using the functions in the annotate object
-    # actions.append(annotate.circle(0, 0))
+    actions.append(annotate.circle(0, 0))
     
     return actions
