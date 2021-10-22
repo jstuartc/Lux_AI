@@ -186,6 +186,6 @@ def agent(observation, configuration):
     Assign missions to non hive assigned workers along with hives
     
     """
-    print(f"Turn {observation['step']}")
-    print([len(hive.workers) for hive in hives])
+    #print(f"Turn {observation['step']}")
+    #print([len(hive.workers) for hive in hives])
     return actions

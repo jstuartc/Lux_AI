@@ -1,7 +1,7 @@
 from lux.game import Game
 from lux.game_map import Position
 from lux.game_objects import Player, Unit
-from mission import Mission
+from mission2 import Mission
 from typing import Dict
 
 """Job of this is to produce which can calculate routes for units to achieve their tasks"""

@@ -1,7 +1,7 @@
 from lux.game import Game
 from lux.game_objects import Player, CityTile
 from typing import List
-from hive import Hive
+from hive4 import Hive
 import math
 
 
@@ -11,7 +11,7 @@ def best_city_to_produce_from(player: Player, city_list: List[CityTile], hive_li
     for city_tile in city_list:
         best_score = - math.inf
         for hive in hive_list:
-            score = hive.hive_score(city_tile.pos, False)
+            score = hive.hive_score(city_tile.pos)
             if score > best_score:
                 best_score = score
         city_score_dict[city_tile] = best_score
@@ -19,7 +19,7 @@ def best_city_to_produce_from(player: Player, city_list: List[CityTile], hive_li
     return city_score_dict
 
 
-def city_action(game_state: Game, player: Player, hive_list: List[Hive]):
+def city_action(game_state: Game, player: Player, hive_list: List[Hive], is_night):
     city_list = player.cities.values()
     actions = []
 
@@ -40,7 +40,7 @@ def city_action(game_state: Game, player: Player, hive_list: List[Hive]):
     sorted_actionable_cities = sorted(actionable_city_tile, key=lambda tile: the_dict[tile])
 
     for city_tile in sorted_actionable_cities:
-        if worker_numbers < city_numbers:  # Workers to be produced if less
+        if worker_numbers < city_numbers and not is_night:  # Workers to be produced if less
             actions.append(city_tile.build_worker())
             worker_numbers += 1
         else:

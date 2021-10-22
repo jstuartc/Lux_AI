@@ -8,7 +8,7 @@ from lux.game_constants import GAME_CONSTANTS
 from lux import annotate
 from collections import defaultdict
 from typing import Dict, List
-from mission import Mission
+from mission2 import Mission
 from lux.game_objects import Player, Position, Unit
 
 
